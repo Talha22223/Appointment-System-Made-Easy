@@ -1,0 +1,278 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MODEL (replaces MongoDB User schema)
+// ============================================
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  phone     String?
+  image     String?
+  
+  // Address stored as JSON (equivalent to MongoDB embedded document)
+  address   Json?    @default("{}")
+  
+  gender    Gender?
+  dob       String?
+  role      Role     @default(patient)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  appointments      Appointment[] @relation("PatientAppointments")
+  prescriptions     Prescription[] @relation("PatientPrescriptions")
+  labBookings       LabBooking[] @relation("PatientLabBookings")
+  pharmacistAppointments PharmacistAppointment[] @relation("PatientPharmacistAppointments")
+  
+  @@map("users")
+}
+
+// ============================================
+// DOCTOR MODEL (replaces MongoDB Doctor schema)
+// ============================================
+model Doctor {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  password    String
+  speciality  String
+  degree      String
+  experience  String
+  fees        Float
+  image       String   @default("")
+  about       String   @default("")
+  available   Boolean  @default(true)
+  
+  // Address stored as JSON
+  address     Json?    @default("{}")
+  
+  // Slots booked stored as JSON (equivalent to MongoDB Object type)
+  slotsBooked Json?    @default("{}")
+  
+  role        String   @default("doctor")
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  appointments   Appointment[] @relation("DoctorAppointments")
+  prescriptions  Prescription[] @relation("DoctorPrescriptions")
+  
+  @@map("doctors")
+}
+
+// ============================================
+// APPOINTMENT MODEL (replaces MongoDB Appointment schema)
+// ============================================
+model Appointment {
+  id              String   @id @default(cuid())
+  
+  // Doctor reference (nullable for cases where doctorDetails is used instead)
+  doctorId        String?
+  doctor          Doctor?  @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: SetNull)
+  
+  // Doctor details stored as JSON (for cases when doctor is not in DB)
+  doctorDetails   Json?    @default("{}")
+  
+  // User (patient) reference
+  userId          String
+  user            User     @relation("PatientAppointments", fields: [userId], references: [id], onDelete: Cascade)
+  
+  appointmentDate DateTime
+  purpose         String   @default("General Checkup")
+  method          AppointmentMethod @default(InPerson)
+  notes           String?
+  status          AppointmentStatus @default(pending)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  prescription    Prescription?
+  
+  @@map("appointments")
+}
+
+// ============================================
+// PRESCRIPTION MODEL (replaces MongoDB Prescription schema)
+// ============================================
+model Prescription {
+  id            String   @id @default(cuid())
+  
+  // Patient reference
+  patientId     String
+  patient       User     @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
+  
+  // Doctor reference
+  doctorId      String
+  doctor        Doctor   @relation("DoctorPrescriptions", fields: [doctorId], references: [id], onDelete: Cascade)
+  
+  // Appointment reference (optional)
+  appointmentId String?  @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  
+  // Medicines stored as JSON array (equivalent to MongoDB array of subdocuments)
+  medicines     Json     @default("[]")
+  
+  diagnosis     String?
+  advice        String?
+  followUp      DateTime?
+  
+  createdAt     DateTime @default(now())
+  
+  @@map("prescriptions")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+enum Gender {
+  Male
+  Female
+  Other
+}
+
+enum Role {
+  patient
+  doctor
+  admin
+}
+
+enum AppointmentMethod {
+  InPerson    @map("In Person")
+  VideoCall   @map("Video Call")
+  PhoneCall   @map("Phone Call")
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+  rejected
+}
+
+// ============================================
+// LAB TECHNIQUE MODEL (parallel to Doctor)
+// ============================================
+model LabTechnique {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @default("")
+  category      String
+  duration      String   @default("30 mins")
+  price         Float
+  image         String   @default("")
+  requirements  String   @default("")
+  preparation   String   @default("")
+  available     Boolean  @default(true)
+  
+  // Slots booked stored as JSON
+  slotsBooked   Json?    @default("{}")
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  labBookings   LabBooking[]
+  
+  @@map("lab_techniques")
+}
+
+// ============================================
+// LAB BOOKING MODEL (parallel to Appointment)
+// ============================================
+model LabBooking {
+  id              String   @id @default(cuid())
+  
+  // Lab Technique reference
+  labTechniqueId  String?
+  labTechnique    LabTechnique? @relation(fields: [labTechniqueId], references: [id], onDelete: SetNull)
+  
+  // Lab Technique details stored as JSON (for cases when lab technique is not in DB)
+  labTechniqueDetails Json? @default("{}")
+  
+  // User (patient) reference
+  userId          String
+  user            User     @relation("PatientLabBookings", fields: [userId], references: [id], onDelete: Cascade)
+  
+  bookingDate     DateTime
+  notes           String?
+  status          AppointmentStatus @default(pending)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("lab_bookings")
+}
+
+// ============================================
+// PHARMACIST MODEL (parallel to Doctor)
+// ============================================
+model Pharmacist {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  password    String
+  speciality  String   @default("General Pharmacy")
+  degree      String
+  experience  String
+  fees        Float
+  image       String   @default("")
+  about       String   @default("")
+  available   Boolean  @default(true)
+  
+  // Address stored as JSON
+  address     Json?    @default("{}")
+  
+  // Slots booked stored as JSON
+  slotsBooked Json?    @default("{}")
+  
+  role        String   @default("pharmacist")
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  pharmacistAppointments PharmacistAppointment[] @relation("PharmacistAppointments")
+  
+  @@map("pharmacists")
+}
+
+// ============================================
+// PHARMACIST APPOINTMENT MODEL (parallel to Appointment)
+// ============================================
+model PharmacistAppointment {
+  id              String   @id @default(cuid())
+  
+  // Pharmacist reference
+  pharmacistId    String?
+  pharmacist      Pharmacist? @relation("PharmacistAppointments", fields: [pharmacistId], references: [id], onDelete: SetNull)
+  
+  // Pharmacist details stored as JSON (for cases when pharmacist is not in DB)
+  pharmacistDetails Json? @default("{}")
+  
+  // User (patient) reference
+  userId          String
+  user            User     @relation("PatientPharmacistAppointments", fields: [userId], references: [id], onDelete: Cascade)
+  
+  appointmentDate DateTime
+  purpose         String   @default("Medication Consultation")
+  method          AppointmentMethod @default(InPerson)
+  notes           String?
+  status          AppointmentStatus @default(pending)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("pharmacist_appointments")
+}
